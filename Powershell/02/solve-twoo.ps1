@@ -28,107 +28,95 @@ function get-input(){
     return $content
 }
 
+#############################
 ## Task specific functions ##
+#############################
 function check-report($report){
     [int[]]$script:reportArr = $report -split " " | ForEach-Object {[int]$_}
-    add-to-logline "new dir"
-    $script:direction = get-direction $script:reportArr[0] $script:reportArr[1]
+    if(check-array){
+        return 1
+    }else{
+        return 0
+    }
+}
 
-    $script:skiped = $null
+function check-array {
+    param (
+        [int]$FromPosition = 0,
+        [int]$SkipPosition = -1,
+        [string]$Direction,
+        [switch]$Skiped
+    )
+    add-to-logline "NEW RUN =>"
+    if($SkipPosition -eq $script:reportArr.Count-1){
+        return $true
+    }
+    if($Direction -eq ""){
+        $nextPos = $(if(($FromPosition+1) -eq $SkipPosition){$FromPosition+2}else{$FromPosition+1})
+        $Direction = get-direction $script:reportArr[$FromPosition] $script:reportArr[$nextPos]
+    }
 
     $loopBound = $script:reportArr.Count-1
-    for($i = 0; $i -lt $loopBound; $i++){
+    for($i=$FromPosition; $i -lt $loopBound; $i++){
         $lvlA = $script:reportArr[$i]
-        $lvlB = $script:reportArr[$i+1]
-        $stepStatus = check-step $lvlA $lvlB
         
-        if ($stepStatus -ne "safe"){
-            $i = skip-level $i
-            if($i -eq -2){
-                return 0
-            }             
+        if($SkipPosition -eq ($i+1)){
+            $lvlB = $script:reportArr[$i+2]
+            $i++
+        }else{
+            $lvlB = $script:reportArr[$i+1]
         }
-    }
-    return 1
-}
 
-function skip-level($i){
-    switch ($script:skiped){
-        $null {
-            if($i -eq 1){
-                skip-first-level
-                return 0
+        $stepStatus = check-step $lvlA $lvlB $Direction
+
+        if($stepStatus -ne "safe"){
+            if($Skiped){
+                return $false
             }
-    }
-        "first" {
-            rerun 
-            return -1
+            switch ($i) {
+                0 {
+                    # o-x
+                    # s -->
+                    # --s->
+                    return ((check-array -FromPosition 1 -Skiped) `
+                            -or (check-array -SkipPosition 1 -Skiped))
+                  }
+                1 {
+                    # o-o-x
+                    # --s->
+                    #   d-s->
+                    # s -->
+                    return ((check-array -SkipPosition 1 -Skiped) `
+                            -or (check-array -FromPosition 1 -Direction $Direction -SkipPosition 2 -Skiped) `
+                            -or (check-array -FromPosition 1 -Skiped))
+                }
+                Default {
+                    # o-o-o-x
+                    #     d-s->
+                    #   d-s->
+                    return ((check-array -FromPosition $i -Direction $Direction -SkipPosition ($i+1) -Skiped) `
+                            -or (check-array -FromPosition ($i-1) -Direction $Direction -SkipPosition $i -Skiped))
+                }
+            }
         }
-        "skiped" {
-            add-to-logline "no seccond skip"
-            return -2
-        }
     }
 
-    if(skip-general $i){
-        $lvl = $script:reportArr[$i+2]
-        add-to-logline "skiped to [$lvl]"
-        $script:skiped = "skiped"
-        return $i+1
-    }else{
-        return -2
-    }
+    return $true
 }
 
-function skip-first-level(){
-    $script:skiped = "first" 
-    add-to-logline "first skiped"
-    add-to-logline "new dir"
-    $script:direction = get-direction $script:reportArr[1] $script:reportArr[2]
-}
-
-function rerun(){
-    add-to-logline "rerun"
-    $script:direction = get-direction $script:reportArr[0] $script:reportArr[1]
-    $script:skiped = "rerun"
-}
 function get-direction([int]$lvlA, [int]$lvlB){
         $direction = if($lvlA -lt $lvlB){"up"}else{"down"}
         add-to-logline  $direction
         return $direction
 }
 
-function skip-general($i){
-    # skip $i
-    # check back
-    add-to-logline "skip i" 
-    $lvlIplus = $script:reportArr[$i+1]
-    if($i -gt 1){
-        $lvlImin = $script:reportArr[$i-1]
-        $checkBack = check-step $lvlImin $lvlIplus
-    }
-    #check farward
-    $lvlIplusplus = $script:reportArr[$i+2]
-    $checkFarward = check-step $lvlIplus $lvlIplusplus
-
-    $skipI = ($checkBack -eq "safe" -and $checkFarward -eq "safe")
-    
-    #skip $i++
-    add-to-logline "skip i+"
-    $lvlI = $script:reportArr[$i]
-    $chekIplus = check-step $lvlI $lvlIplusplus
-    $skipIplus = ( $chekIplus -eq "safe")
-
-    return ($skipI -or $skipIplus)
-
-}
-function check-step($lvlA, $lvlB){
+function check-step($lvlA, $lvlB, $stepDiraction){
     $step = $lvlA - $lvlB
     add-to-logline "${lvlA} - ${lvlB} = ${step}"
 
     #check dirrection
     $direction = get-direction $lvlA $lvlB
-    if($direction -ne $script:direction){
+    if($direction -ne $stepDiraction){
         add-to-logline "wrong direction"
         return "wrong direction"
     }
@@ -141,7 +129,9 @@ function check-step($lvlA, $lvlB){
     return "safe"
 }
 
-## Magic begins here ##
+#################
+## Main script ##
+#################
 initiate
 $result = 0
 $puzle = get-input
