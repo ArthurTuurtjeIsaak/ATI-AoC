@@ -22,7 +22,7 @@ function add-to-logline($line){
 function log{
     param([string]$logLine,
           [switch]$inline)
-    $logOut = $(if($logLine -eq "" -or $null -eq $logLine){$script:logLine}else{$logLine})
+    $logOut = $(if($logLine -eq "" -or $null -eq $logLine){$script:logLine ;clear-logline}else{$logLine})
     if($LogToScreen){
         Write-Host $logOut
     }
@@ -41,46 +41,82 @@ function get-input(){
 #############################
 ## Task specific functions ##
 #############################
-
+function get-abs-diff{
+    param(
+        [int]$indexA,
+        [int]$indexB
+    )
+    $diff = $indexA - $indexB
+    return $(if($diff -lt 0){"negative"}else{"positive"})
+}
 #################
 ## Main script ##
 #################
 initiate
 $result = 0
 $puzle = get-input
-
 $rows = $puzle.Count
-$columns = $puzle[0].Length
 
-$grid = @{}
+# task specific script variables
+$rules =@{}
+$pages =@()
 
+# load task loop
 $rowCount = 0
 $puzle | ForEach-Object{
-    Write-Progress -Activity "Loading wordsearch" -Status "Row $($rowCount+1) of ${rows}"
-    $colCount = 0
-    $_ -split "" | Where-Object {$_ -ne ''}| ForEach-Object {
-        $grid.add("${rowCount},${colCount}", " $($_) ")
-        $colCount++
+    if($_ -match '\|'){
+        $activity = "Loading rules"
+        $rules.Add(
+                    $_,
+                    ($_ -split '\|') -as [int[]] 
+        )
+    }else{
+        $activity = "Loading pages"
+        if(-not $_ -eq ""){
+            $pages += ,$(($_ -split ',') -as [int[]])
+        }
     }
+    Write-Progress -Activity $activity -Status "Row $($rowCount+1) of ${rows}"
     $rowCount++
 }
 
-for($row = 0; $row -le $rows; $row++){
-    for($col = 0; $col -le $columns; $col++){
-    Write-Progress -Activity "Running wordsearch" -Status "Row $($row+1) of ${rows} | Column $($col+1) of ${columns}"
-        if($grid["${row},${col}"] -eq ' A '){
-            $blub =  (find-xmas-from -row $row -col $col) 
-            $result = $result + $blub
-            if($blub -gt 0){$grid["${row},${col}"]="(A)"}
+# execute task loop
+$rowCount = 0
+$rows = $pages.Count
+:row foreach($row in $pages){
+    $activity = "Processing pages"
+    Write-Progress -Activity $activity -Status "Row ${rowCount} of ${rows}" -PercentComplete (($rowCount/$rows)*100)
+    $rowCount++
+    add-to-logline $row
+    foreach($page in $row){
+        # get rules for page
+        $pageRules = $rules.GetEnumerator() | Where-Object {$_.Key -match "${page}"}
+        foreach($rule in $pageRules){
+            # check index diff rule
+            $pageRuleIndex = $rule.Value.indexOf($page)
+            $otherRuleIndex = $(if($pageRuleIndex -eq 0){1}else{0})
+            $other = $rule.Value[$otherRuleIndex] 
+            $ruleDiff = get-abs-diff -indexA $pageRuleIndex -indexB $otherRuleIndex
+            # check index diff row
+            $pageRowIndex = $row.indexOf($page)
+            $otherRowIndex = $row.indexOf($other)
+            # check if other is present in row
+            if($otherRowIndex -eq -1){
+                continue
+            }
+            $rowDiff = get-abs-diff -indexA $pageRowIndex -indexB $otherRowIndex
+            if($ruleDiff -ne $rowDiff){
+                add-to-logline " broke rule $($rule.Key)"
+                log
+                log "next row"
+                continue row
+            }
         }
     }
-}
-for($row = 0; $row -lt $rows; $row++){
-    for($col = 0; $col -lt $columns; $col++){
-        add-to-logline $grid["${row},${col}"]
-    }
     log
-    clear-logline
+    $middleIndex = [Math]::Floor($($row.Count /2))
+    log "middle page $($row[$middleIndex])"
+    $result += $row[$middleIndex]
 }
 
 Write-Host "Result: ${result}"
