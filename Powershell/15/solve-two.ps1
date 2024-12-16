@@ -42,20 +42,59 @@ function get-input(){
 ## Task specific functions ##
 #############################
 
+function create-mapObjects{
+    param(
+        [int]$row,
+        [int]$col,
+        [string]$type
+    )
+    $objects=@()
+    switch ($type){
+        "O"{$objects += new-mapObject -type "[" -row $row -col $col; $objects+= new-mapObject -type "]" -row $row -col ($col+1); break }
+        "#"{for([int]$i=0; $i -lt 2; $i++){$objects+= new-mapObject -type "#" -row $row -col ($col+$i)}; break}
+        "@"{$objects+= new-mapObject -type $type -row $row -col $col}        
+    }
+    return $objects
+}
+
+function new-mapObject{
+    param(
+        [int]$row,
+        [int]$col,
+        [string]$type
+    )
+    $mapObject = [PSCustomObject]@{
+                            type = $type
+                            row = $row
+                            col = $col
+                    }
+                if($type -ne "#"){
+                    if($type -eq "["){
+                        $mapObject | Add-Member -MemberType ScriptMethod -Name "getGps" -Value $getObjectGps
+                    }
+                    $mapObject | Add-Member -MemberType ScriptMethod -Name "move" -Value $moveOnObject
+                } 
+                if($mapObject.type -eq '@'){
+                    $robbie = $mapObject
+                }
+    return $mapObject
+}
+
 function add-toMap{
     [CmdletBinding()]
     param(
         [Parameter(ValueFromPipeline)]
         [PSCustomObject]$mapObject
     )
+    process{
+        $key = "$($mapObject.row) $($mapObject.col)"
 
-    $key = "$($mapObject.row) $($mapObject.col)"
-
-    if($map.ContainsKey($key)){
-        $map[$key].Add($mapObject)
-    }else{
-        $map[$key] = [System.Collections.Generic.List[object]]::new()
-        $map[$key].Add($mapObject)
+        if($map.ContainsKey($key)){
+            $map[$key].Add($mapObject)
+        }else{
+            $map[$key] = [System.Collections.Generic.List[object]]::new()
+            $map[$key].Add($mapObject)
+        }
     }
 }
 
@@ -121,6 +160,8 @@ $puzle = get-input
 $rows = $puzle.Count
 
 ## Task specific objects ##
+[PSCustomObject]$robbie=$null
+
 $getObjectGps={
     $gps = 100 * $this.row + $this.col
     return $gps
@@ -150,21 +191,11 @@ $puzle | ForEach-Object{
     if($_ -match '#'){
     $colCount = 0
         $activity = "Loading map"
-        $_ -split '' | Where-Object{$_ -ne ''} |  ForEach-Object {
-            if($_ -ne '.'){
-                $mapObject = [PSCustomObject]@{
-                            type = $_
-                            row = $rowCount
-                            col = $colCount
-                    } 
-                $mapObject | Add-Member -MemberType ScriptMethod -Name "getGps" -Value $getObjectGps
-                $mapObject | Add-Member -MemberType ScriptMethod -Name "move" -Value $moveOnObject
-                if($mapObject.type -eq '@'){
-                    $robbie = $mapObject
-                }
-                $mapObject | add-toMap
+        $_ -split '' | Where-Object{$_ -ne ''} | ForEach-Object {
+            if($_ -ne "."){
+                create-mapObjects -row $rowCount -col $colCount -type $_ | add-toMap
             }
-            $colCount++
+            $colCount+=2
         }
         $gridRows++
     }else{
@@ -190,6 +221,6 @@ foreach($instruction in $roboInstructions){
 log " "
 log-grid
 # for ach object in map get gps if type = o
-$map.GetEnumerator() | Where-Object {$_.Value.type -eq "O"} | ForEach-Object {$result += $_.Value.getGps()}
+$map.GetEnumerator() | Where-Object {$_.Value.type -eq "["} | ForEach-Object {$result += $_.Value.getGps()}
 
 Write-Host "Result: ${result}"
