@@ -75,7 +75,7 @@ function new-mapObject{
                     $mapObject | Add-Member -MemberType ScriptMethod -Name "move" -Value $moveOnObject
                 } 
                 if($mapObject.type -eq '@'){
-                    $robbie = $mapObject
+                    $script:robbie = $mapObject
                 }
     return $mapObject
 }
@@ -126,20 +126,52 @@ function get-next {
     return $map[$key]
 }
 
+function get-betterHalf{
+    param(
+        [PSCustomObject]$mapObject
+    )
+    switch($mapObject.type){
+        "[" {$key = "$($mapObject.row) $($mapObject.col+1)"}
+        "]" {$key = "$($mapObject.row) $($mapObject.col-1)"}
+    }
+    return $map[$key]
+}
+
 function move-next {
     param (
         [PSCustomObject]$FromObject,
         [int[]]$Vector
     )
-        
-    $nextObject = get-next -mapObject $FromObject -Vectort $Vector
-    $iets = switch ($nextObject.type) {
-        "#" { $moveVector = @(0,0);break}
-        "O" { $moveVector = @(move-next -FromObject $nextObject -Vector $Vector);break}
-        $null {$moveVector = $Vector}
-    } 
-    move-object -mapObject $FromObject -vector $moveVector | Out-Null
-    return $moveVector
+    $canMove = $true
+    if($FromObject.type -ne "@" -and ($Vector[0] -ne 0)){
+        # haal wederhelft
+        $betterHalf = get-betterHalf -mapObject $FromObject
+    }
+    
+    $fromObjects=@($FromObject, $betterHalf)
+
+    foreach($object in $fromObjects){
+        if($null -ne $object){
+            $next = get-next -mapObject $object -Vectort $Vector
+            if($next.type -eq "#"){
+                return $false
+            }elseif("[" -eq $next.type -or "]" -eq $next.type){
+                $nextMoved = move-next -FromObject $next -Vector $Vector
+                $canMove = ($canMove -and $nextMoved)
+            }else{
+                $canMove = ($canMove -and $true)
+            }
+        }   
+    }
+    if($canMove){
+        foreach($object in $fromObjects){
+            if($null -ne $object){
+                move-object -mapObject $object -vector $Vector
+            }
+        }
+    }
+    
+    return $canMove
 }
 
 function log-grid{
@@ -160,10 +192,8 @@ $puzle = get-input
 $rows = $puzle.Count
 
 ## Task specific objects ##
-[PSCustomObject]$robbie=$null
-
 $getObjectGps={
-    $gps = 100 * $this.row + $this.col
+    $gps = 100 * $this.row + ($this.col)
     return $gps
 }
 
@@ -200,22 +230,25 @@ $puzle | ForEach-Object{
         $gridRows++
     }else{
         $activity = "Loading robot instruction"
-        Write-Progress -Activity $activity -Status "Row $($rowCount+1) of ${rows}"
+         Write-Progress -Activity $activity -Status "Row $($rowCount+1) of ${rows}"
         $roboInstructions += $_ -split '' | Where-Object {$_ -ne ''}
     }
     $rowCount++
 }
 log-grid
 # execute task loop
+$instCount = 0
 foreach($instruction in $roboInstructions){
     $activity = "Running instructions"
     $instCount++
-    Write-Progress -Activity $activity -Status "${instCount} of $($roboInstructions.Count)"
+    # Write-Progress -Activity $activity -Status "${instCount} of $($roboInstructions.Count)"
     # get vector
+    # log "${instCount}  ${instruction}"
     $instructionVector = $vectorLib[$instruction]
     # get starting point
-    move-next -FromObject $robbie -Vector $instructionVector | Out-Null
-    # log-grid
+    move-next -FromObject $script:robbie -Vector $instructionVector | Out-Null
+    cls ; log-grid ; Start-Sleep -Milliseconds 150
+    
 }
 
 log " "
