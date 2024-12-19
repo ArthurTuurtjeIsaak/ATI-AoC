@@ -142,6 +142,7 @@ function move-next {
         [PSCustomObject]$FromObject,
         [int[]]$Vector
     )
+
     $canMove = $true
     if($FromObject.type -ne "@" -and ($Vector[0] -ne 0)){
         # haal wederhelft
@@ -152,6 +153,9 @@ function move-next {
 
     foreach($object in $fromObjects){
         if($null -ne $object){
+            if(-not ($script:allToMove | Where-Object {$_.type -eq $object.type -and $_.row -eq $object.row -and $_.col -eq $object.col})){
+                $script:allToMove+=$object
+            }
             $next = get-next -mapObject $object -Vectort $Vector
             if($next.type -eq "#"){
                 return $false
@@ -162,13 +166,6 @@ function move-next {
                 $canMove = ($canMove -and $true)
             }
         }   
-    }
-    if($canMove){
-        foreach($object in $fromObjects){
-            if($null -ne $object){
-                move-object -mapObject $object -vector $Vector
-            }
-        }
     }
     
     return $canMove
@@ -221,6 +218,7 @@ $puzle | ForEach-Object{
     if($_ -match '#'){
     $colCount = 0
         $activity = "Loading map"
+        Write-Progress -Activity $activity -Status "Row $($rowCount+1) of ${rows}"
         $_ -split '' | Where-Object{$_ -ne ''} | ForEach-Object {
             if($_ -ne "."){
                 create-mapObjects -row $rowCount -col $colCount -type $_ | add-toMap
@@ -230,7 +228,7 @@ $puzle | ForEach-Object{
         $gridRows++
     }else{
         $activity = "Loading robot instruction"
-         Write-Progress -Activity $activity -Status "Row $($rowCount+1) of ${rows}"
+        Write-Progress -Activity $activity -Status "Row $($rowCount+1) of ${rows}"
         $roboInstructions += $_ -split '' | Where-Object {$_ -ne ''}
     }
     $rowCount++
@@ -241,13 +239,18 @@ $instCount = 0
 foreach($instruction in $roboInstructions){
     $activity = "Running instructions"
     $instCount++
-    # Write-Progress -Activity $activity -Status "${instCount} of $($roboInstructions.Count)"
+    Write-Progress -Activity $activity -Status "${instCount} of $($roboInstructions.Count)"
     # get vector
     # log "${instCount}  ${instruction}"
     $instructionVector = $vectorLib[$instruction]
     # get starting point
-    move-next -FromObject $script:robbie -Vector $instructionVector | Out-Null
-    cls ; log-grid ; Start-Sleep -Milliseconds 150
+    $script:allToMove=@()
+    if(move-next -FromObject $script:robbie -Vector $instructionVector){
+        foreach($thunderLizard in $script:allToMove){
+            move-object -mapObject $thunderLizard -vector $instructionVector | Out-Null
+        }
+    }
+    # cls ; log-grid ; Start-Sleep -Milliseconds 150
     
 }
 
