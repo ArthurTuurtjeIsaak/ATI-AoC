@@ -12,7 +12,11 @@ function initiate(){
     $script:logLine=""
 }
 
-function add-to-logline($line){
+function add-to-logline(){
+    param(
+        [Parameter(ValueFromPipeline)]
+        [object]$line
+    )
     $script:logLine = $script:logLine + "${line}"
 }
  function clear-logline {
@@ -49,6 +53,57 @@ function get-abs-diff{
     $diff = $indexA - $indexB
     return $(if($diff -lt 0){"negative"}else{"positive"})
 }
+
+function getRowRules(){
+    param(
+        [int[]]$row
+    )
+    $rowRules=@{}
+        foreach($page in $row){
+        # Filter matching rules for the current page
+        foreach ($rule in $rules.GetEnumerator()) {
+            if ($row -contains $rule.Value[0] -and $row -contains $rule.Value[1]) {
+                $rowRules[$rule.Key] = $rule.Value
+            }
+        }
+    }
+    return $rowRules
+}
+
+function check-row(){
+    [CmdletBinding()]
+    param(
+        [Parameter()]
+        [System.Collections.Generic.List[int]]$row,
+        [hashtable]$rowRules
+    )
+    $clean = $true
+    $ruleKeys = $rowRules.Keys
+    for($i=0; $i -lt $row.Count; $i++){
+        $page = $row[$i]
+        foreach($key in $ruleKeys){
+            if($key -match "^${page}\|"){
+                $other = $rowRules[$key][1]
+                if($row.IndexOf($other) -lt $row.IndexOf($page)){
+                    $row.Remove($other) | Out-Null
+                    $row.Insert(($row.IndexOf($page)+1),$other)
+                    $i=-1
+                    $clean = $false
+                }
+            }elseIf($key -match "\|${page}"){
+                 $other = $rowRules[$key][1]
+                 if($row.IndexOf($other) -gt $row.IndexOf($page)){
+                    $row.Remove($page) | Out-Null
+                    $row.Insert(($row.IndexOf($other)+1),$page)
+                    $i=-1
+                    $clean = $false
+                }
+            }
+        }
+    }
+    
+    Write-Output $(if($clean){0}else{$row})
+}
 #################
 ## Main script ##
 #################
@@ -62,7 +117,7 @@ $rules =@{}
 $pages =@()
 
 # load task loop
-$rowCount = 0
+$rowCount = 0 
 $puzle | ForEach-Object{
     if($_ -match '\|'){
         $activity = "Loading rules"
@@ -87,34 +142,12 @@ $rows = $pages.Count
     $activity = "Processing pages"
     Write-Progress -Activity $activity -Status "Row ${rowCount} of ${rows}" -PercentComplete (($rowCount/$rows)*100)
     $rowCount++
-    add-to-logline $row
-    foreach($page in $row){
-        # get rules for page
-        $pageRules = $rules.GetEnumerator() | Where-Object {$_.Key -match "${page}"}
-        foreach($rule in $pageRules){
-            # check index diff rule
-            $pageRuleIndex = $rule.Value.indexOf($page)
-            $otherRuleIndex = $(if($pageRuleIndex -eq 0){1}else{0})
-            $other = $rule.Value[$otherRuleIndex] 
-            $ruleDiff = get-abs-diff -indexA $pageRuleIndex -indexB $otherRuleIndex
-            # check index diff row
-            $pageRowIndex = $row.indexOf($page)
-            $otherRowIndex = $row.indexOf($other)
-            # check if other is present in row
-            if($otherRowIndex -eq -1){
-                continue
-            }
-            $rowDiff = get-abs-diff -indexA $pageRowIndex -indexB $otherRowIndex
-            if($ruleDiff -ne $rowDiff){
-                # waar heen
-                #
-            }
-        }
-    }
-    log
+    
+    $rowRules = getRowRules $row
+    $row = check-row -row $row -rowRules $rowRules
     $middleIndex = [Math]::Floor($($row.Count /2))
     log "middle page $($row[$middleIndex])"
     $result += $row[$middleIndex]
 }
-
+   
 Write-Host "Result: ${result}"
