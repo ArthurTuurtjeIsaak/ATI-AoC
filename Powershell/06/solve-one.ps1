@@ -42,154 +42,104 @@ function get-input(){
 ## Task specific functions ##
 #############################
 
-function add-toMap{
-    [CmdletBinding()]
-    param(
-        [Parameter(ValueFromPipeline)]
-        [PSCustomObject]$mapObject
-    )
+function guard-onroute(){
+    $script:nextBlock=$null
+    add-to-logline "Left at ${script:guard} "
+    add-to-logline "going ${script:direction} "
+    switch($script:direction){
+        "up"    {$script:nextBlock = $script:grid | 
+                    Where-Object {$_.col -eq $script:guard.col -and $_.row -lt $script:guard.row } |
+                    Sort-Object -Descending -Property row |
+                    Select-Object -First 1
+                    $script:direction = "right"}
+        "down"  {$script:nextBlock = $script:grid | 
+                    Where-Object {$_.col -eq $script:guard.col -and $_.row -gt $script:guard.row } |
+                    Sort-Object -Property row |
+                    Select-Object -First 1
+                    $script:direction = "left"}
+        "left"  {$script:nextBlock = $script:grid | 
+                    Where-Object {$_.col -lt $script:guard.col -and $_.row -eq $script:guard.row } |
+                    Sort-Object -Descending -Property col |
+                    Select-Object -First 1
+                    $script:direction = "up"}
+        "right" {$script:nextBlock = $script:grid | 
+                    Where-Object {$_.col -gt $script:guard.col -and $_.row -eq $script:guard.row } |
+                    Sort-Object -Property row |
+                    Select-Object -First 1
+                    $script:direction = "down"}
+    }
 
-    $key = "$($mapObject.row) $($mapObject.col)"
-
-    if($map.ContainsKey($key)){
-        $map[$key].Add($mapObject)
-    }else{
-        $map[$key] = [System.Collections.Generic.List[object]]::new()
-        $map[$key].Add($mapObject)
+    if(-not $null -eq $script:nextBlock){
+        steps-taken
+        add-to-logline "block at ${script:nextBlock}" ; log; log $script:result
+        move-guard
+        guard-onroute
     }
 }
 
-function move-object {
-    param (
-        [int[]]$vector,
-        [PSCustomObject]$mapObject
-    )
+function steps-taken(){
+    $verticalSteps=0
+    $verticalSteps = [math]::abs($script:guard.row - $script:nextBlock.row)
+    $horizontalSteps = 0
+    $horizontalSteps = [math]::abs($script:guard.col - $script:nextBlock.col)
 
-    $oldKey = "$($mapObject.row) $($mapObject.col)"
-    if($map.ContainsKey($oldKey)){
-        $map[$oldKey].Remove($mapObject)
-        if($map[$oldKey].Count -eq 0){
-            $map.Remove($oldKey)
-        }
+    $stepsTaken = $verticalSteps + $horizontalSteps -1
+
+    add-to-logline "Steps taken ${stepsTaken} "
+
+    $script:result += $stepsTaken
+}
+
+function move-guard(){
+    if($script:guard.row -lt $script:nextBlock.row){
+        $script:guard.row = $script:nextBlock.row-1
+    }elseif($script:guard.row -gt $script:nextBlock.row){
+        $script:guard.row = $script:nextBlock.row+1
+    }elseif($script:guard.col -lt $script:nextBlock.col){
+        $script:guard.col = $script:nextBlock.col-1
+    }elseif($script:guard.col -gt $script:nextBlock.col){
+        $script:guard.col = $script:nextBlock.col+1
     }
-
-    $mapObject.move($vector)
-    $mapObject | add-toMap 
 }
 
-function get-next {
-    param (
-        [PSCustomObject]$mapObject,
-        [int[]]$Vectort
-    )
-    $key = "$($mapObject.row+$Vectort[0]) $($mapObject.col+$Vectort[1])"
-
-    return $map[$key]
-}
-
-function move-next {
-    param (
-        [PSCustomObject]$FromObject,
-        [int[]]$Vector
-    )
-        
-    $nextObject = get-next -mapObject $FromObject -Vectort $Vector
-    $iets = switch ($nextObject.type) {
-        "#" { $moveVector = @(0,0);break}
-        "O" { $moveVector = @(move-next -FromObject $nextObject -Vector $Vector);break}
-        $null {$moveVector = $Vector}
-    } 
-    move-object -mapObject $FromObject -vector $moveVector | Out-Null
-    return $moveVector
-}
-
-function log-grid{
-    for($r=0; $r -lt $gridRows; $r++){
-        for($c=0; $c -lt $colCount; $c++){
-            add-to-logline $(if($null -eq $map["${r} ${c}"]){"."}else{$map["${r} ${c}"].type})
-        }
-        log
+function guard-exit(){
+    switch($script:direction){
+        "up"    {$script:nextBlock=[PSCustomObject]@{row = -1; col = $script:guard.col}}
+        "down"  {$script:nextBlock =[PSCustomObject]@{row = $script:rowCount+1 ; col = $script:guard.col}}
+        "left"  {$script:nextBlock=[PSCustomObject]@{col = $script:colCount+1; row = $script:guard.row}}
+        "right" {$script:nextBlock=[PSCustomObject]@{col = -1; row = $script:guard.row}}
     }
+    steps-taken
+    add-to-logline "exit ${script:nextBlock}"
 }
 
 #################
 ## Main script ##
 #################
 initiate
-$result = 0
-$puzle = get-input
-$rows = $puzle.Count
-
-## Task specific objects ##
-$getObjectGps={
-    $gps = 100 * $this.row + $this.col
-    return $gps
-}
-
-$moveOnObject={
-    param(
-        [int[]]$vector
-    )
-    $this.row += $vector[0]
-    $this.col += $vector[1]
-}
-
-$vectorLib=@{
-    "^" = @(-1,0)
-    ">" = @(0,1)
-    "<" = @(0,-1)
-    "v" = @(1,0)
-}
-
-$map =@{}
-$roboInstructions =@()
-$gridRows = 0
-# load task loop
-$rowCount = 0
-$puzle | ForEach-Object{
-    if($_ -match '#'){
-    $colCount = 0
-        $activity = "Loading map"
-        $_ -split '' | Where-Object{$_ -ne ''} |  ForEach-Object {
-            if($_ -ne '.'){
-                $mapObject = [PSCustomObject]@{
-                            type = $_
-                            row = $rowCount
-                            col = $colCount
-                    } 
-                $mapObject | Add-Member -MemberType ScriptMethod -Name "getGps" -Value $getObjectGps
-                $mapObject | Add-Member -MemberType ScriptMethod -Name "move" -Value $moveOnObject
-                if($mapObject.type -eq '@'){
-                    $robbie = $mapObject
-                }
-                $mapObject | add-toMap
-            }
-            $colCount++
+$script:result = 0
+$script:puzle = get-input
+$rows = $script:puzle.Count
+$script:rowCount = 0
+$script:grid= [System.Collections.Generic.List[PSCustomObject]]::New()
+foreach($row in $script:puzle){
+    $activity = "Loading puzle."
+    Write-Progress -Activity $activity -Status "Row: ${script:rowCount} of ${rows}" -PercentComplete $(($script:rowCount/$rows)*100)
+    $script:colCount = 0
+    $row -split "" | Where-Object {"" -ne $_} | ForEach-Object{
+        if($_ -eq "#"){
+            $script:grid.Add([PSCustomObject]@{row = $script:rowCount; col = $script:colCount})
+            
+        }elseif($_ -eq "^"){
+            $script:guard=[PSCustomObject]@{row = $script:rowCount; col = $script:colCount}
         }
-        $gridRows++
-    }else{
-        $activity = "Loading robot instruction"
-        Write-Progress -Activity $activity -Status "Row $($rowCount+1) of ${rows}"
-        $roboInstructions += $_ -split '' | Where-Object {$_ -ne ''}
+        $script:colCount++
     }
-    $rowCount++
-}
-log-grid
-# execute task loop
-foreach($instruction in $roboInstructions){
-    $activity = "Running instructions"
-    $instCount++
-    Write-Progress -Activity $activity -Status "${instCount} of $($roboInstructions.Count)"
-    # get vector
-    $instructionVector = $vectorLib[$instruction]
-    # get starting point
-    move-next -FromObject $robbie -Vector $instructionVector | Out-Null
-    # log-grid
+    $script:rowCount++
 }
 
-log " "
-log-grid
-# for ach object in map get gps if type = o
-$map.GetEnumerator() | Where-Object {$_.Value.type -eq "O"} | ForEach-Object {$result += $_.Value.getGps()}
-
-Write-Host "Result: ${result}"
+$script:direction = "up"
+guard-onroute
+guard-exit
+log
+Write-Host "Result: ${script:result}"
