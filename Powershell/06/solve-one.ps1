@@ -43,6 +43,8 @@ function get-input(){
 #############################
 
 function guard-onroute(){
+    $activity = "Tracking robot"
+    Write-Progress -Activity $activity -Status "Steps counted: ${script:result} Unique positions tracked $($script:mapedSteps.Count)"
     $script:nextBlock=$null
     add-to-logline "Left at ${script:guard} "
     add-to-logline "going ${script:direction} "
@@ -71,9 +73,17 @@ function guard-onroute(){
 
     if(-not $null -eq $script:nextBlock){
         steps-taken
-        add-to-logline "block at ${script:nextBlock}" ; log; log $script:result
+        add-to-logline "block at ${script:nextBlock}" ; log
         move-guard
         guard-onroute
+    }else{
+        # gedoe
+        switch ($script:direction) {
+            "up"    {$script:direction = "left"; break}
+            "down"  {$script:direction = "right"; break}
+            "right" {$script:direction = "up"; break}
+            "left"  {$script:direction = "down"; break}
+        }
     }
 }
 
@@ -83,7 +93,9 @@ function steps-taken(){
     $horizontalSteps = 0
     $horizontalSteps = [math]::abs($script:guard.col - $script:nextBlock.col)
 
-    $stepsTaken = $verticalSteps + $horizontalSteps -1
+    $script:stepsTaken = $verticalSteps + $horizontalSteps -1
+
+    map-rout 
 
     add-to-logline "Steps taken ${stepsTaken} "
 
@@ -102,12 +114,42 @@ function move-guard(){
     }
 }
 
+# Moeilijk doenerij omdat ik de opdracht niet goed heb gelezenzen 
+# maar nu ook geen zin heb om alles om te bouwen
+# Beetje angstig voor deel twee dat wel 
+function map-rout(){
+        $moveRow = $(if($script:guard.row -ne $script:nextBlock.row){$true}else{$false})
+        $from = $(if($moveRow){$script:guard.row}else{$script:guard.col})
+        $to = $(if($moveRow){$script:nextBlock.row}else{$script:nextBlock.col})
+        
+        if($script:guard.row -lt $script:nextBlock.row -or $script:guard.col -lt $script:nextBlock.col){
+            $step=1
+        }else{
+            $step=-1
+        }
+
+        for($i = $from; $i -ne $to; $i+=$step){
+            if($moveRow){
+                $row = $i
+                $col = $script:guard.col
+            }else{
+                $row = $script:guard.row
+                $col = $i
+            }
+            $visited = "${row}|${col}"
+            if($script:mapedSteps -notcontains $visited){
+            `	log $visited
+                $script:mapedSteps.Add($visited)
+            }
+        }
+}
+
 function guard-exit(){
     switch($script:direction){
         "up"    {$script:nextBlock=[PSCustomObject]@{row = -1; col = $script:guard.col}}
         "down"  {$script:nextBlock =[PSCustomObject]@{row = $script:rowCount+1 ; col = $script:guard.col}}
-        "left"  {$script:nextBlock=[PSCustomObject]@{col = $script:colCount+1; row = $script:guard.row}}
-        "right" {$script:nextBlock=[PSCustomObject]@{col = -1; row = $script:guard.row}}
+        "left"  {$script:nextBlock=[PSCustomObject]@{row = $script:guard.row; col = -1}}
+        "right" {$script:nextBlock=[PSCustomObject]@{row = $script:guard.row; col = $script:colCount+1}}
     }
     steps-taken
     add-to-logline "exit ${script:nextBlock}"
@@ -124,7 +166,6 @@ $script:rowCount = 0
 $script:grid= [System.Collections.Generic.List[PSCustomObject]]::New()
 foreach($row in $script:puzle){
     $activity = "Loading puzle."
-    Write-Progress -Activity $activity -Status "Row: ${script:rowCount} of ${rows}" -PercentComplete $(($script:rowCount/$rows)*100)
     $script:colCount = 0
     $row -split "" | Where-Object {"" -ne $_} | ForEach-Object{
         if($_ -eq "#"){
@@ -136,10 +177,12 @@ foreach($row in $script:puzle){
         $script:colCount++
     }
     $script:rowCount++
+    Write-Progress -Activity $activity -Status "Row: ${script:rowCount} of ${rows}" -PercentComplete $(($script:rowCount/$rows)*100)
 }
-
+$script:mapedSteps=[System.Collections.Generic.List[string]]::new()
 $script:direction = "up"
 guard-onroute
 guard-exit
 log
 Write-Host "Result: ${script:result}"
+Write-Host "Actual result: $($script:mapedSteps.Count-1)"
