@@ -66,7 +66,7 @@ function guard-onroute(){
                     $script:direction = "up"}
         "right" {$script:nextBlock = $script:grid | 
                     Where-Object {$_.col -gt $script:guard.col -and $_.row -eq $script:guard.row } |
-                    Sort-Object -Property row |
+                    Sort-Object -Property col |
                     Select-Object -First 1
                     $script:direction = "down"}
     }
