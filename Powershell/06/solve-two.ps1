@@ -76,24 +76,21 @@ function sim-loop(){
     )
     
     $thisKey = get-key -Grid $Grid -Direction $Direction
-    add-to-logline "TK ${thisKey}| "
+    add-to-logline "TK ${thisKey} `n"
     $script:miniloop[$thisKey]=$Grid
     $nextStop = get-nextStop -Grid $Grid -Direction $Direction
-    add-to-logline "NK $($nextStop.Key)| "
-    if($null -eq $nextStop -or $script:leadsToExit.ContainsKey($nextStop.Key)){
-        # if(-not $script:pathTraveld.ContainsKey($thisKey)){$script:leadsToExit[$thisKey]=$Grid}
-        add-to-logline "Null OR LeadsToExit. "
+    add-to-logline "NK $($nextStop.Key) `n"
+    if($null -eq $nextStop){
+        add-to-logline "FAIL `n-------------------------"
+        log
         return $false
-    }elseif($script:pathTraveld.ContainsKey($nextStop.Key)){
-        add-to-logline "On traveld path. "
-        return $true
     }elseif($script:miniloop.ContainsKey($nextStop.Key)){
-        add-to-logline "Stuck in miniloop. "
+        add-to-logline "LOOP `n++++++++++++++++++++++++++"
+        log
         return $true
     }elseif(sim-loop -Grid $nextStop.Grid -Direction $nextStop.Direction){
         return $true
     }else{
-        #if(-not $script:pathTraveld.ContainsKey($thisKey)){$script:leadsToExit[$thisKey]=$Grid}
         return $false
     }
 }
@@ -159,7 +156,7 @@ function switch-direction(){
 #################
 $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
 initiate
-$script:result = 0
+$script:result=@{}
 $script:puzle = get-input
 $rows = $script:puzle.Count
 $script:rowCount = 0
@@ -172,7 +169,7 @@ foreach($row in $script:puzle){
         if($_ -eq "#"){
            add-Block -Grid @($script:rowCount, $script:colCount)
         }elseif($_ -eq "^"){
-           $r= $script:rowCount; $c= $script:colCount
+            $script:startGrid=@($script:rowCount,$script:colCount)
         }
         $script:colCount++
     }
@@ -180,28 +177,32 @@ foreach($row in $script:puzle){
     Write-Progress -Activity $activity -Status "Row: ${script:rowCount} of ${rows}" -PercentComplete $(($script:rowCount/$rows)*100)
 }
 $script:direction = "up"
-$script:pathTraveld = @{}
-$script:leadsToExit = @{}
+$script:loopers=@{}
+$r=$script:startGrid[0]; $c=$script:startGrid[1]
 while($r -ge 0 -and $c -ge 0 -and $r -lt $script:rowCount -and $c -lt $script:colCount){
     $thisGrid = @($r, $c)
     $thisKey = get-key -Grid $thisGrid -Direction $script:direction
     $nextGrid = get-nextGrid -Grid $thisGrid
-    if($script:blocks.ContainsKey($nextGrid[0]) -and $script:blocks[$nextGrid[0]].ContainsKey($nextGrid[1])) {
-        $script:direction = switch-direction -DirectionIn $script:direction
-    }else{
-        add-to-logline "From ${thisKey}| "
-        $script:miniloop=@{}
-        if($script:leadsToExit.ContainsKey($thisKey)){$script:leadsToExit.Remove($thisKey)}
-        $script:pathTraveld[$thisKey]=$thisGrid
-        Write-Progress -Activity "Running Sims" -Status "From ${thisKey}"
-        add-Block -Grid $nextGrid
-        $script:result+=$(if((sim-loop -Grid $thisGrid -Direction $script:direction)){1}else{0})
-        $r=$nextGrid[0]
-        $c=$nextGrid[1]
-        remove-Block -Grid $nextGrid
-        log
+    $blockKey = get-key -Grid $nextGrid
+    if(-not $script:result.ContainsKey[$blockKey]){
+        if($script:blocks.ContainsKey($nextGrid[0]) -and $script:blocks[$nextGrid[0]].ContainsKey($nextGrid[1])) {
+            $script:direction = switch-direction -DirectionIn $script:direction
+        }else{
+            $script:miniloop=@{}
+            add-Block -Grid $nextGrid
+            $status = "Bogus block at [$($nextGrid[0])|$($nextGrid[1])]"
+            add-to-logline "${status}`n"
+            Write-Progress -Activity "Running Sims" -Status $status
+            if(sim-loop -Grid $startGrid -Direction "up"){
+                $script:result[$blockKey]=$nextGrid
+            }
+            $r=$nextGrid[0]
+            $c=$nextGrid[1]
+            remove-Block -Grid $nextGrid
+            clear-logline
+        }
     }
 }
 
 $stopwatch.Stop()
-Write-Host "Result ${script:result} `nTotal runtime: $($stopwatch.Elapsed.TotalMinutes) minutes"
+Write-Host "Result $($script:result.Count) `nTotal runtime: $($stopwatch.Elapsed.TotalMinutes) minutes"
