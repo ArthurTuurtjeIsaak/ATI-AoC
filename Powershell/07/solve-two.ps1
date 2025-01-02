@@ -58,6 +58,7 @@ function calculate(){
         foreach($i in $inputSet){
             $thisResult.Add([long]$calcArray[$fromI]*$i) | Out-Null
             $thisResult.Add([long]$calcArray[$fromI]+$i) | Out-Null
+            $thisResult.Add([long]::Parse("${i}$($calcArray[$fromI])")) | Out-Null
         }
     }
     return $thisResult
