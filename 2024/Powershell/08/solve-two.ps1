@@ -69,17 +69,18 @@ foreach($row in $script:puzle){
     $rowCount++
 }
 $antinodes=[System.Collections.Generic.HashSet[string]]::new()
-
+[int]$totalCount=0
 $antenas.Values| ForEach-Object{
     foreach($m in $_.Keys){
         foreach($o in $_.Keys){
             if($m -ne $o){
                 $rc = $_[$m][0]-$_[$o][0]
                 $cc = $_[$m][1]-$_[$o][1]
-                $r = $_[$m][0]+$rc
-                $c = $_[$m][1]+$cc
+                $r = $_[$m][0]
+                $c = $_[$m][1]
                 while($r -ge 0 -and $c -ge 0 -and $r -lt $rowCount -and $c -lt $colCount){
-                    $antinodes.Add("${r},${c}") | Out-Null 
+                    $totalCount++
+                    $antinodes.Add("${r},${c}")|Out-Null
                     $r+=$rc
                     $c+=$cc
                 }
@@ -94,7 +95,6 @@ for($i=0; $i -lt $rows; $i++){
     }
     log
 }
-log $antinodes
 
-Write-Host "Result: $($antinodes.Count)"
+Write-Host "Result: $($antinodes.Count). Total count: ${totalCount}"
 Write-Host "Runtime: $($stopwatch.Elapsed.TotalMinutes) minutes."
