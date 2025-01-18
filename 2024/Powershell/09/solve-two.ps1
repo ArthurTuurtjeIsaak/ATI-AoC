@@ -44,7 +44,9 @@ function get-input(){
 #############################
 ## Task specific functions ##
 #############################
-
+$innerIndex = {
+    return ($this.totalSpace - $this.emptySpace)
+}
 
 #################
 ## Main script ##
@@ -52,60 +54,58 @@ function get-input(){
 $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
 initiate
 $script:puzle = get-input
-$row = $script:puzle -Split "" | Where-Object {$_ -ne ""}| ForEach-Object {[int]$_} 
+$files=@{}
+$emptySectors=@{} 
+$positions=@{}
+$index=0
+$rowPos=0
+$script:puzle -Split "" | Where-Object {$_ -ne ""}| ForEach-Object {
+    Write-Progress -Activity "Mapping the puzzle"  -PercentComplete (($index/$script:puzle.Length)*100)
+    if(($index % 2) -eq 0){
+        $files.Add($index, [PSCustomObject]@{length=$_; optimized=$false; id=($index / 2)})
+    }else{
+        $emptySectors.Add($index, [PSCustomObject]@{totalSpace=[int]$_; emptySpace=[int]$_})
+        $emptySectors[$index] | Add-Member -MemberType ScriptMethod -Name innerIndex -Value $innerIndex
+    }
+    $rowPos+=[int]$_
+    $positions.Add(++$index, $rowPos)
+} 
 
 #  0     1     2     3     4
 #  F  s  F  s  F  s  F  s  F
 #  2  3  3  3  1  3  3  1  2
 #  0  1  2  3  4  5  6  7  8
 
-# $esi == $emptySpaceIndex
-[long]$esi = 1
-[long]$position = $row[0]
-[long]$lastFileIndex = ($row.Count - 1)
-# preload first defrag
-[int]$fileFragments = $row[$lastFileIndex]
-[long]$checkSums=0
-[long]$checkSum=0
-$filesDone = [System.Collections.Generic.HashSet[int]]::New()
-while ($esi -le $lastFileIndex){
-    Write-Progress -Activity "Defrag in progress" -Status "Padding $($row[$esi]) sectors at index ${esi}"
-    # checksum previos file except the first one (checksum of 0 will be 0)
-    if($esi -gt 1){
-        for([int]$fl = 0; $fl -lt $row[$esi-1];$fl++){
-            $filesDone.Add(($esi-1)) | Out-Null
-            $checkSum = (($esi-1)/2)*$position++
-            log "$('{0:d6}' -f $esi) | $('{0:d4}' -f (($esi-1)/2)) x $('{0:d5}' -f ($position-1)) = $('{0:d9}' -f $checkSum) | file F[$($row[$esi-1])] at $($esi-1)"
-            $checkSums+= $checkSum
-        }
-    }
-    log "-----------------------------------------"
-
-    #pad and checksum this empty space
-    for($es = 0 ; $es -lt $row[$esi]; $es++){
-        $checkSum = ($lastFileIndex/2)*$position++
-        log "$('{0:d6}' -f $esi) | $('{0:d4}' -f ($lastFileIndex/2)) x $('{0:d5}' -f ($position-1)) = $('{0:d9}' -f $checkSum) | fragment from F[$($row[$lastFileIndex])] at ${lastFileIndex}" 
-        $checkSums+=$checkSum
-        $fileFragments-=1
-        if($fileFragments -eq 0){
-            if(-not $filesDone.Contains(($lastFileIndex -= 2))){
-                # check if there are files left to pad with
-                $fileFragments = $row[$lastFileIndex]
-                $filesDone.Add($lastFileIndex) | Out-Null
-            }else{
-                log $lastFileIndex
-                break
+[int]$fi= $files.Keys | Sort-Object -Descending | Select-Object -First 1
+# defrag and cheksum from back to front
+for($fi; $fi -gt 0; $fi-=2){
+    Write-Progress -Activity "Optimizing files" -Status "Checking file $($files[$fi].id) at ${fi}"
+    if(-not $files[$fi].optimized){
+        # find empty space
+        $esi = $emptySectors.Keys | Where-Object {$emptySectors[$_].emptySpace -ge $files[$fi].length} | Sort-Object | Select-Object -First 1
+        if($null -ne $esi){
+            # get pos 
+            $pos = ($positions[$esi] + $emptySectors[$esi].innerIndex())
+            # fill empty space
+            $emptySectors[$esi].emptySpace = $emptySectors[$esi].emptySpace - $files[$fi].length
+            # checksum
+            for([int]$i=0; $i -lt $files[$fi].length; $i++){
+                $checkSum = $files[$fi].id * ($pos+$i)
+                $checkSums+=$checkSum
             }
+            Remove-Variable i
+            $files[$fi].optimized = $true
         }
     }
-    $esi+=2
-    log "-----------------------------------------" 
 }
-while($fileFragments -gt 0){
-    $checkSum = ($lastFileIndex/2)*$position++
-    log "$($lastFileIndex/2) x ${position} = ${checkSum}"
-    $checkSums+=$checkSum
-    $fileFragments-=1
+# checksum others
+$files.Keys | Where-Object {-not $files[$_].optimized} | ForEach-Object {
+    Write-Progress -Activity "Checksum whats left" -Status "file $($files[$_].id) at $($_)."
+    $pos = $positions[$_]
+    for([int]$i=0; $i -lt $files[$_].length; $i++){
+        $checkSum = $files[$_].id * ($pos+$i)
+        $checkSums+=$checkSum
+    }
 }
 Write-Host "Result: ${checkSums}"
 Write-Host "Runtime: $($stopwatch.Elapsed.TotalMinutes) minutes."
